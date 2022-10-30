@@ -1,0 +1,123 @@
+#version 450
+
+#define WORKGROUP_SIZE 2
+
+layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = WORKGROUP_SIZE ) in;
+
+layout(std430, set = 0, binding = 0) buffer buf1 {
+    float input_data[];
+};
+
+layout(std430, set = 0, binding = 1) buffer buf2 {
+    float output_data[];
+};
+
+layout ( std430, push_constant ) uniform variables {
+    int filter_x_size;
+    int filter_y_size;
+    int input_channels;
+    int input_width;
+    int input_height;
+    int padding;
+    int maxPool;
+};
+
+vec2 getXRange(){
+    int workgroups = int(gl_NumWorkGroups.x);
+    int localgroups = workgroups * WORKGROUP_SIZE;
+
+    int id = int(gl_GlobalInvocationID.x);
+
+    int dim = input_width;
+    int stride = dim / localgroups;
+    int start = id * stride;
+    int end = start + stride - 1;
+
+    if(id == localgroups - 1){
+        end = dim - 1;
+    }
+
+    vec2 range = {start, end};
+    return range;
+}
+
+vec2 getYRange(){
+    int workgroups = int(gl_NumWorkGroups.y);
+    int localgroups = workgroups * WORKGROUP_SIZE;
+
+    int id = int(gl_GlobalInvocationID.y);
+
+    int dim = input_height;
+    int stride = dim / localgroups;
+    int start = id * stride;
+    int end = start + stride - 1;
+
+    if(id == localgroups - 1){
+        end = dim - 1;
+    }
+
+    vec2 range = {start, end};
+    return range;
+}
+
+vec2 getZRange(){
+    int workgroups = int(gl_NumWorkGroups.z);
+    int localgroups = workgroups * WORKGROUP_SIZE;
+
+    int id = int(gl_GlobalInvocationID.z);
+
+    int dim = input_channels;
+    int stride = dim / localgroups;
+    int start = id * stride;
+    int end = start + stride - 1;
+
+    if(id == localgroups - 1){
+        end = dim - 1;
+    }
+
+    vec2 range = {start, end};
+    return range;
+}
+
+void main(){
+    int x_pad = filter_x_size / 2;
+    int y_pad = filter_y_size / 2;
+
+    vec2 xrange = getXRange();
+    vec2 yrange = getYRange();
+    vec2 zrange = getZRange();
+
+
+    if(padding == 1){
+        for(int c = int(zrange.x); c <= int(zrange.y); c++){
+            for(int i = int(yrange.x); i <= int(yrange.y); i++){
+                for(int j = int(xrange.x); j <= int(xrange.y); j++){
+                    float val = 1000000.0;
+                    for(int y = max(0, i - y_pad); y < min(i + y_pad + 1, input_height); y++){
+                        for(int x = max(0, j - x_pad); x < min(j + x_pad + 1, input_width); x++){
+                            val = min(val, input_data[x + (y * input_width) + (c * input_width * input_height)]);
+                        }
+                    }
+                    output_data[j + (i * input_width) + (c * input_width * input_height)] = val;
+                }
+            }
+        } 
+    }else {
+        for(int c = int(zrange.x); c <= int(zrange.y); c++){
+            for(int i = int(yrange.x); i <= int(yrange.y); i++){
+                for(int j = int(xrange.x); j <= int(xrange.y); j++){
+                    if(i - y_pad < 0 || i + y_pad > input_height || j - x_pad < 0 || j + x_pad > input_width){
+                        continue;
+                    }
+                    float val = 1000000.0;
+                    for(int y = max(0, i - y_pad); y < min(i + y_pad + 1, input_height); y++){
+                        for(int x = max(0, j - x_pad); x < min(j + x_pad + 1, input_width); x++){
+                            val = min(val, input_data[x + (y * input_width) + (c * input_width * input_height)]);
+                        }
+                    }
+                    output_data[j + (i * input_width) + (c * input_width * input_height)] = val;
+                }
+            }
+        }        
+    }
+}
